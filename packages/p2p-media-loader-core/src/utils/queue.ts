@@ -21,9 +21,9 @@ export function* generateQueue(
   const { runtimeId, stream } = lastRequestedSegment;
 
   const requestedSegment = stream.segments.get(runtimeId);
-  if (!requestedSegment) return;
+  if (!requestedSegment || requestedSegment.isP2PDisabled) return;
 
-  const queueSegments = stream.segments.values();
+  const queueSegments = getP2PEnabledSegments(stream.segments.values());
 
   let first: SegmentWithStream;
 
@@ -76,6 +76,12 @@ export function* generateQueue(
     );
     if (isNotActualStatuses(statuses)) break;
     yield { segment, statuses };
+  }
+}
+
+function* getP2PEnabledSegments(segments: Iterable<SegmentWithStream>) {
+  for (const segment of segments) {
+    if (!segment.isP2PDisabled) yield segment;
   }
 }
 

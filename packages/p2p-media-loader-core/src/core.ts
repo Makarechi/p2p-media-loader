@@ -3,6 +3,7 @@ import debug from "debug";
 import {
   Stream,
   CoreConfig,
+  CoreRequestError,
   Segment,
   CoreEventMap,
   DynamicCoreConfig,
@@ -519,9 +520,23 @@ export class Core<TStream extends Stream = Stream> {
    * @throws {Error} - Throws if the segment is not registered in any stream.
    */
   async loadSegment(segmentRuntimeId: string, callbacks: EngineCallbacks) {
+    const segment = this.identifySegment(segmentRuntimeId);
+    if (segment.isP2PDisabled) {
+      callbacks.onError(new CoreRequestError("failed"));
+      return;
+    }
+
     await this.initializeSegmentStorage();
 
-    const segment = this.identifySegment(segmentRuntimeId);
+    // A playlist refresh or source change may replace the registration while
+    // custom storage initializes. Never load using an obsolete permission.
+    if (
+      StreamUtils.getSegmentFromStreamsMap(this.streams, segmentRuntimeId) !==
+      segment
+    ) {
+      callbacks.onError(new CoreRequestError("failed"));
+      return;
+    }
 
     const loader = this.getStreamHybridLoader(segment);
     void loader.loadSegment(segment, callbacks);
@@ -579,6 +594,7 @@ export class Core<TStream extends Stream = Stream> {
   isSegmentLoadable(segmentRuntimeId: string): boolean {
     try {
       const segment = this.identifySegment(segmentRuntimeId);
+      if (segment.isP2PDisabled) return false;
 
       if (
         segment.stream.type === "main" &&

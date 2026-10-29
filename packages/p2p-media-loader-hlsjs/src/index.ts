@@ -7,4 +7,5 @@ export type {
   PartialHlsJsP2PEngineConfig,
   HlsWithP2PInstance,
   HlsWithP2PConfig,
+  HlsJsSegmentFilter,
 } from "./engine.js";

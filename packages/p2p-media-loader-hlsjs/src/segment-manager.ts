@@ -3,8 +3,16 @@ import type {
   ManifestLoadedData,
   LevelUpdatedData,
   AudioTrackLoadedData,
+  Fragment,
+  LevelDetails,
 } from "hls.js";
-import { Core, Segment, StreamRegistration } from "p2p-media-loader-core";
+import {
+  Core,
+  Segment,
+  StreamRegistration,
+  debug,
+} from "p2p-media-loader-core";
+import type { HlsJsSegmentFilter } from "./engine.js";
 import {
   getAudioStreamProperties,
   getVideoStreamProperties,
@@ -12,8 +20,12 @@ import {
 
 export class SegmentManager {
   core: Core;
+  private readonly logger = debug("p2pml-hlsjs:segment-manager");
 
-  constructor(core: Core) {
+  constructor(
+    core: Core,
+    private readonly segmentFilter?: HlsJsSegmentFilter,
+  ) {
     this.core = core;
   }
 
@@ -48,9 +60,8 @@ export class SegmentManager {
   }
 
   updatePlaylist(data: LevelUpdatedData | AudioTrackLoadedData) {
-    const {
-      details: { url, fragments, live },
-    } = data;
+    const { details } = data;
+    const { url, fragments, live } = details;
 
     const registeredSegmentIds = this.core.getStreamSegmentRuntimeIds(url);
     if (!registeredSegmentIds) return;
@@ -82,10 +93,31 @@ export class SegmentManager {
         byteRange,
         startTime,
         endTime,
+        isP2PDisabled: !this.isSegmentP2PAllowed(fragment, details),
       });
     });
 
     if (!newSegments.length && !segmentToRemoveIds.size) return;
     this.core.updateStream(url, newSegments, segmentToRemoveIds.values());
+  }
+
+  private isSegmentP2PAllowed(fragment: Fragment, details: LevelDetails) {
+    if (!this.segmentFilter) return true;
+    try {
+      const result: unknown = this.segmentFilter(fragment, details);
+      if (typeof result !== "boolean") {
+        this.logger("segmentFilter must return a boolean");
+        // A mistakenly async filter must neither enable P2P nor leave a rejected
+        // promise unhandled. Its eventual result does not change the decision.
+        void Promise.resolve(result).catch((error: unknown) => {
+          this.logger("segmentFilter failed: %O", error);
+        });
+        return false;
+      }
+      return result;
+    } catch (error) {
+      this.logger("segmentFilter failed: %O", error);
+      return false;
+    }
   }
 }

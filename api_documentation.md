@@ -629,6 +629,69 @@ The global namespaces are `window.p2pml.hlsjs` and `window.p2pml.shaka`.
 </script>
 ```
 
+## Keeping selected HLS segments HTTP-only
+
+Set `segmentFilter` on the Hls.js P2P engine to decide which segments may be
+shared. It runs before a newly discovered segment enters the Core's download
+queue, including background prefetching. This is useful for personalized ads
+in a playlist that also contains shared content.
+
+```typescript
+import Hls from "hls.js";
+import { HlsJsP2PEngine } from "p2p-media-loader-hlsjs";
+
+const HlsWithP2P = HlsJsP2PEngine.injectMixin(Hls);
+const hls = new HlsWithP2P({
+  p2p: {
+    segmentFilter: (fragment, details) => {
+      // Example packager contract: only this path contains shared content.
+      // Ads and unclassified segments are fetched by the default HTTP loader.
+      return new URL(fragment.url).pathname.startsWith("/shared-content/");
+    },
+  },
+});
+```
+
+The callback receives the Hls.js `Fragment` and its `LevelDetails` for both video
+and audio playlists. Applications can instead classify segments using
+`fragment.tagList`, `fragment.programDateTime`, `details.dateRanges`, or a
+previously resolved allowlist. The library does not interpret ad markers itself.
+For range markers such as `CUE-OUT`/`CUE-IN`, classify **every** segment in the
+break, including later fragments that do not repeat the start marker. Live
+windows may start inside an ad break; uncertain segments should return `false`.
+
+- `true`: normal P2P/HTTP scheduling. Content downloaded through HTTP can be
+  cached, announced and uploaded to peers.
+- `false`: the original Hls.js loader handles the segment. The P2P Core does not
+  download, prefetch or cache it, announce its availability, or upload it, even
+  if a custom storage contains data for that segment.
+- No filter: existing behavior is unchanged; all segments are eligible.
+
+The callback must be synchronous and return a boolean. Exceptions, non-boolean
+results and promises exclude the segment from P2P. Resolve any remote policy or
+ad metadata **before** loading the playlist. A decision is fixed for the lifetime
+of that segment's registration: playlist refreshes do not reevaluate existing
+segments, and `applyDynamicConfig` does not change the filter. This is not a
+runtime revocation API.
+
+Excluded downloads use the player's HTTP loader, including its normal request
+configuration and error handling. They do not produce Core `onSegmentLoaded`
+or `onChunkDownloaded` events; use player/network telemetry when counting total
+HTTP traffic, including ads.
+
+Filtering preserves segment numbering and swarm identities. Peers in the same
+swarm must still associate each segment ID with identical media bytes. If
+personalized insertion changes the numbering or timeline of shared content,
+isolate those presentations into different swarms or normalize their identities
+separately. A filter alone does not make mismatched playlists compatible.
+
+Custom Core integrations can set `isP2PDisabled: true` on a `Segment` before
+calling `core.updateStream`. Its descriptor remains registered for playlist
+accounting, but `core.isSegmentLoadable(runtimeId)` returns `false`; the
+integration must use its normal HTTP loader. Calling `core.loadSegment` directly
+for such a segment reports an error instead of loading it. The built-in Shaka
+integration does not expose a manifest-aware filter in this change.
+
 ## Predicting swarm infohashes on a server
 
 Each stream (media quality) is downloaded through its own P2P swarm, identified on trackers by an **infohash**. The infohash is the hash of the **stream swarm ID** — a string derived from the swarm ID, the stream type, and the stream's identity hash (a stable hash of its manifest properties such as bitrate, codecs, and resolution).

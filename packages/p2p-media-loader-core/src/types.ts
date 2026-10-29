@@ -30,6 +30,14 @@ export type Segment = {
 
   /** The end time of the segment in seconds, relative to the beginning of the stream. */
   readonly endTime: number;
+
+  /**
+   * Excludes this segment from P2P downloading, prefetching, caching and uploading.
+   * Player integrations must load excluded segments through their default HTTP
+   * loader. Defaults to false. Set before registration; existing registrations
+   * are not updated by subsequent calls to Core.updateStream.
+   */
+  readonly isP2PDisabled?: boolean;
 };
 
 /**

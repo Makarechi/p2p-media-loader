@@ -199,6 +199,7 @@ export class P2PLoader {
   };
 
   downloadSegment(segment: SegmentWithStream) {
+    if (segment.isP2PDisabled) return;
     const peersWithSegment: Peer[] = [];
     for (const peer of this.#peersMap.values()) {
       if (
@@ -218,6 +219,7 @@ export class P2PLoader {
   }
 
   isSegmentLoadingOrLoadedBySomeone(segment: SegmentWithStream): boolean {
+    if (segment.isP2PDisabled) return false;
     for (const peer of this.#peersMap.values()) {
       if (peer.getSegmentStatus(segment)) return true;
     }
@@ -225,6 +227,7 @@ export class P2PLoader {
   }
 
   isSegmentLoadedBySomeone(segment: SegmentWithStream): boolean {
+    if (segment.isP2PDisabled) return false;
     for (const peer of this.#peersMap.values()) {
       if (peer.getSegmentStatus(segment) === "loaded") return true;
     }
@@ -242,15 +245,20 @@ export class P2PLoader {
   }
 
   #getSegmentsAnnouncement() {
-    const loaded: number[] = this.#segmentStorage.getStoredSegmentIds(
-      this.#stream.swarmId,
-      this.#stream.streamSwarmId,
-    );
+    // Storage may persist across sessions or be supplied by the application.
+    // Only advertise segments whose current registration permits sharing.
+    const allowedIds = new Set<number>();
+    for (const segment of this.#stream.segments.values()) {
+      if (!segment.isP2PDisabled) allowedIds.add(segment.externalId);
+    }
+    const loaded = this.#segmentStorage
+      .getStoredSegmentIds(this.#stream.swarmId, this.#stream.streamSwarmId)
+      .filter((id) => allowedIds.has(id));
     const httpLoading: number[] = [];
 
     for (const request of this.#requests.httpRequests()) {
       const segment = this.#stream.segments.get(request.segment.runtimeId);
-      if (!segment) continue;
+      if (!segment || segment.isP2PDisabled) continue;
 
       httpLoading.push(segment.externalId);
     }
@@ -392,6 +400,14 @@ export class P2PLoader {
     });
   };
 
+  #isSegmentUploadAllowed(segment: SegmentWithStream) {
+    return (
+      !this.#config.isP2PUploadDisabled &&
+      !segment.isP2PDisabled &&
+      this.#stream.segments.get(segment.runtimeId) === segment
+    );
+  }
+
   #onSegmentRequested = async (
     peer: Peer,
     segmentExternalId: number,
@@ -402,8 +418,7 @@ export class P2PLoader {
       this.#stream,
       segmentExternalId,
     );
-    if (!segment) return;
-    if (this.#config.isP2PUploadDisabled) {
+    if (!segment || !this.#isSegmentUploadAllowed(segment)) {
       peer.sendSegmentAbsentCommand(segmentExternalId, requestId);
       return;
     }
@@ -425,7 +440,7 @@ export class P2PLoader {
     const peerClosedWhileAwait = !this.#peersMap.has(peer.id);
     if (peerClosedWhileAwait) return;
 
-    if (!segmentData) {
+    if (!segmentData || !this.#isSegmentUploadAllowed(segment)) {
       peer.sendSegmentAbsentCommand(segmentExternalId, requestId);
       return;
     }

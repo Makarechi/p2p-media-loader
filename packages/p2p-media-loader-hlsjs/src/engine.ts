@@ -7,6 +7,8 @@ import type {
   PlaylistLevelType,
   HlsConfig,
   Events,
+  Fragment,
+  LevelDetails,
 } from "hls.js";
 import { FragmentLoaderBase } from "./fragment-loader.js";
 import { PlaylistLoaderBase } from "./playlist-loader.js";
@@ -21,16 +23,32 @@ import {
 } from "p2p-media-loader-core";
 import { injectMixin } from "./engine-static.js";
 
+/**
+ * Decides whether a fragment may participate in P2P. Called synchronously once
+ * before each new segment is registered, for both video and audio playlists.
+ * Only `true` permits P2P. Returning false or throwing uses the default hls.js
+ * HTTP loader and excludes the segment from P2P prefetching, caching and upload.
+ * Decisions are fixed for the lifetime of the segment's registration.
+ */
+export type HlsJsSegmentFilter = (
+  fragment: Readonly<Fragment>,
+  details: Readonly<LevelDetails>,
+) => boolean;
+
 /** Represents the complete configuration for the `HlsJsP2PEngine`. */
 export type HlsJsP2PEngineConfig = {
   /** Complete core configuration settings. */
   core: DefinedCoreConfig;
+  /** Optional segment eligibility filter. Without it, all segments permit P2P. */
+  segmentFilter?: HlsJsSegmentFilter;
 };
 
 /** Allows for partial configuration of the `HlsJsP2PEngine`, useful for providing overrides or partial updates. */
 export type PartialHlsJsP2PEngineConfig = {
   /** Partial core config */
   core?: Partial<CoreConfig>;
+  /** Optional segment eligibility filter, set when constructing the engine. */
+  segmentFilter?: HlsJsSegmentFilter;
 };
 
 /** A type for specifying dynamic configuration options that can be changed at runtime for the P2P engine's core. */
@@ -94,6 +112,7 @@ const MAX_LIVE_SYNC_DURATION = 120;
 export class HlsJsP2PEngine {
   private readonly core: Core;
   private readonly segmentManager: SegmentManager;
+  private readonly segmentFilter?: HlsJsSegmentFilter;
   private hlsInstanceGetter?: () => Hls;
   private currentHlsInstance?: Hls;
   private readonly debug = debug("p2pml-hlsjs:engine");
@@ -129,7 +148,8 @@ export class HlsJsP2PEngine {
    */
   constructor(config?: PartialHlsJsP2PEngineConfig) {
     this.core = new Core(config?.core);
-    this.segmentManager = new SegmentManager(this.core);
+    this.segmentFilter = config?.segmentFilter;
+    this.segmentManager = new SegmentManager(this.core, this.segmentFilter);
   }
 
   /**
@@ -190,7 +210,7 @@ export class HlsJsP2PEngine {
    * @returns A readonly version of the `HlsJsP2PEngineConfig`.
    */
   getConfig(): HlsJsP2PEngineConfig {
-    return { core: this.core.getConfig() };
+    return { core: this.core.getConfig(), segmentFilter: this.segmentFilter };
   }
 
   /**
