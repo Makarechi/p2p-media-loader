@@ -1,0 +1,17 @@
+{
+  "name": "p2p-segment-filter-validation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "fixtures": "node generate-fixtures.mjs",
+    "pretest": "node generate-fixtures.mjs",
+    "test": "node run.mjs"
+  },
+  "dependencies": {
+    "ffmpeg-static": "5.2.0",
+    "ws": "8.18.3"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

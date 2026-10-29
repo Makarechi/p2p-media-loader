@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <title>P2P segment filter — browser validation</title>
+  <style>
+    body {
+      margin: 40px auto;
+      max-width: 900px;
+      font: 18px system-ui;
+      background: #102030;
+      color: #f8fafc;
+    }
+    video {
+      width: 640px;
+      background: #000;
+      border-radius: 8px;
+    }
+    pre {
+      font:
+        13px ui-monospace,
+        monospace;
+      white-space: pre-wrap;
+    }
+  </style>
+  <h1>Real WebRTC / HLS validation</h1>
+  <p>
+    Content can be shared. The two red advertisement fragments must use HTTP
+    only.
+  </p>
+  <video id="video" muted controls playsinline></video>
+  <pre id="status">Initializing…</pre>
+  <script type="module" src="/client.ts"></script>
+</html>
